@@ -4,3 +4,8 @@ torchvision
 Pillow
 matplotlib
 werkzeug
+streamlit
+tensorflow
+numpy
+matplotlib
+pillow
