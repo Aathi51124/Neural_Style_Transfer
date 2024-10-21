@@ -1,11 +1,6 @@
-Flask
-torch
-torchvision
-Pillow
-matplotlib
-werkzeug
-streamlit
-tensorflow
-numpy
-matplotlib
-pillow
+streamlit==1.14.0
+tensorflow==2.13.0
+tensorflow_hub==0.13.0  # Add this line
+numpy==1.23.0
+matplotlib==3.6.0
+pillow==9.2.0
