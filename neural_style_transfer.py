@@ -3,16 +3,17 @@ from io import BytesIO
 from PIL import Image
 import numpy as np
 import tensorflow as tf
-import tensorflow_hub as tf_hub
+from tensorflow.keras.layers import Conv2D, Conv2DTranspose, LeakyReLU, ReLU, Input
+from tensorflow.keras.models import Model
 import matplotlib.pyplot as plt
 
 tf.executing_eagerly()
 
 st.set_page_config(
-    page_title="Neural Style Transfer", layout="wide"
+    page_title="CycleGAN Style Transfer", layout="wide"
 )
 
-def load_image(image_buffer, image_size=(512, 256)):
+def load_image(image_buffer, image_size=(256, 256)):
     img = plt.imread(image_buffer).astype(np.float32)[np.newaxis, ...]
     if img.max() > 1.0:
         img = img / 255.0
@@ -28,69 +29,80 @@ def export_image(tf_img):
     byte_image = buffer.getvalue()
     return byte_image
 
+def generator_model():
+    inputs = Input(shape=(256, 256, 3))
+    x = Conv2D(64, kernel_size=7, strides=1, padding="same")(inputs)
+    x = ReLU()(x)
+    
+    x = Conv2D(128, kernel_size=3, strides=2, padding="same")(x)
+    x = ReLU()(x)
+    x = Conv2D(256, kernel_size=3, strides=2, padding="same")(x)
+    x = ReLU()(x)
+    
+    x = Conv2DTranspose(128, kernel_size=3, strides=2, padding="same")(x)
+    x = ReLU()(x)
+    x = Conv2DTranspose(64, kernel_size=3, strides=2, padding="same")(x)
+    x = ReLU()(x)
+    
+    outputs = Conv2D(3, kernel_size=7, strides=1, padding="same", activation="tanh")(x)
+    return Model(inputs, outputs)
+
+def discriminator_model():
+    inputs = Input(shape=(256, 256, 3))
+    x = Conv2D(64, kernel_size=4, strides=2, padding="same")(inputs)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2D(128, kernel_size=4, strides=2, padding="same")(x)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2D(256, kernel_size=4, strides=2, padding="same")(x)
+    x = LeakyReLU(alpha=0.2)(x)
+    outputs = Conv2D(1, kernel_size=4, strides=1, padding="same")(x)
+    return Model(inputs, outputs)
+
 def st_ui():
+ 
     if "upload_history" not in st.session_state:
         st.session_state.upload_history = []
 
     if "result_history" not in st.session_state:
         st.session_state.result_history = []
 
-    image_upload1 = st.sidebar.file_uploader("Load your content image", type=["jpeg", "png", "jpg"], key="content_image", help="Upload the image you want to style")
-    image_upload2 = st.sidebar.file_uploader("Load your style image", type=["jpeg", "png", "jpg"], key="style_image", help="Upload the style image")
-
-    col1, col2, col3 = st.columns(3)
+    image_upload = st.sidebar.file_uploader("Load your image", type=["jpeg", "png", "jpg"], key="uploaded_image", help="Upload the image you want to transform using CycleGAN")
     
-    st.sidebar.title("Style Transfer")
-    st.sidebar.markdown("Your personal neural style transfer")
-
-    with st.spinner("Loading content image..."):
-        if image_upload1 is not None:
-            col1.header("Content Image")
-            col1.image(image_upload1, use_column_width=True)
-            original_image = load_image(image_upload1)
-
-            st.session_state.upload_history.append({"type": "content", "image": image_upload1.getvalue()})
-        else:
-            original_image = load_image("1.jpg")
+    col1, col2 = st.columns(2)
     
-    with st.spinner("Loading style image..."):
-        if image_upload2 is not None:
-            col2.header("Style Image")
-            col2.image(image_upload2, use_column_width=True)
-            style_image = load_image(image_upload2)
-            style_image = tf.nn.avg_pool(style_image, ksize=[3, 3], strides=[1, 1], padding='VALID')
+    st.sidebar.title("CycleGAN Style Transfer")
+    st.sidebar.markdown("Transform images using a basic CycleGAN implementation")
 
-            st.session_state.upload_history.append({"type": "style", "image": image_upload2.getvalue()})
+   
+    with st.spinner("Loading input image..."):
+        if image_upload is not None:
+            col1.header("Input Image")
+            col1.image(image_upload, use_column_width=True)
+            input_image = load_image(image_upload)
+
+            st.session_state.upload_history.append({"type": "input", "image": image_upload.getvalue()})
         else:
-            style_image = load_image("2.jpg")
-            style_image = tf.nn.avg_pool(style_image, ksize=[3, 3], strides=[1, 1], padding='VALID')
-    
-    if st.sidebar.button(label="Start Styling"):
-        if image_upload1 and image_upload2:
-            with st.spinner('Generating stylized image...'):
-                
-                stylize_model = tf_hub.load('https://tfhub.dev/google/magenta/arbitrary-image-stylization-v1-256/2')
+            st.warning("Please upload an image to continue.")
+            return
 
-                results = stylize_model(tf.constant(original_image), tf.constant(style_image))
-                stylized_photo = results[0]
-                col3.header("Final Image")
-                col3.image(np.array(stylized_photo))
+  
+    G_XtoY = generator_model() 
+    G_YtoX = generator_model() 
+    D_X = discriminator_model() 
+    D_Y = discriminator_model()  
 
-                st.session_state.result_history.append(export_image(stylized_photo))
+    st.sidebar.subheader("Model Architectures")
+    st.sidebar.text("Generator X -> Y")
+    G_XtoY.summary(print_fn=lambda x: st.sidebar.text(x))
+    st.sidebar.text("Generator Y -> X")
+    G_YtoX.summary(print_fn=lambda x: st.sidebar.text(x))
+    st.sidebar.text("Discriminator X")
+    D_X.summary(print_fn=lambda x: st.sidebar.text(x))
+    st.sidebar.text("Discriminator Y")
+    D_Y.summary(print_fn=lambda x: st.sidebar.text(x))
 
-                st.download_button(label="Download Final Image", data=export_image(stylized_photo), file_name="stylized_image.png", mime="image/png")
-        else:
-            st.sidebar.warning("Please upload both content and style images.")
-
-    st.sidebar.subheader("Upload History")
-    for idx, upload in enumerate(st.session_state.upload_history):
-        st.sidebar.markdown(f"**Upload {idx+1} ({upload['type']})**")
-        st.sidebar.image(BytesIO(upload['image']), width=100)
-
-    st.sidebar.subheader("Generated Results")
-    for idx, result in enumerate(st.session_state.result_history):
-        st.sidebar.markdown(f"**Result {idx+1}**")
-        st.sidebar.image(BytesIO(result), width=100)
+    st.sidebar.info("Training setup is complete. For a full implementation, train the model using custom training loops.")
+    st.sidebar.warning("Real-time training is computationally expensive and may not be suitable for Streamlit.")
 
 if __name__ == "__main__":
     st_ui()
