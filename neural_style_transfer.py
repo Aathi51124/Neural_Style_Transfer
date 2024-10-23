@@ -1,58 +1,24 @@
-import streamlit as st
-import torch
-import numpy as np
-from io import BytesIO
-from PIL import Image
-import dnnlib
-import legacy  
-import sys
-sys.path.append('./stylegan3')  
-import dnnlib
-import legacy
+import requests
 
-st.set_page_config(page_title="Advanced StyleGAN3 Generator", layout="wide")
+api_key = '827fa0c0-f519-40a1-8ef4-2072fef5047f'
 
-def load_pretrained_model(network_pkl):
-    print(f'Loading networks from "{network_pkl}"...')
-    with dnnlib.util.open_url(network_pkl) as f:
-        G = legacy.load_network_pkl(f)['G_ema'].to(device) 
-    return G
+content_image_url = 'URL_OF_YOUR_CONTENT_IMAGE'  
+style_image_url = 'URL_OF_YOUR_STYLE_IMAGE'      
 
-def generate_image(G, z, truncation_psi=0.7):
-    #DOUBT
-    img = G(z, None, truncation_psi=truncation_psi, noise_mode='const')
-    img = (img + 1) * (255/2)  
-    img = img.permute(0, 2, 3, 1).cpu().numpy()  
-    img = np.clip(img[0], 0, 255).astype(np.uint8)  
-    return Image.fromarray(img)
+url = 'https://api.deepai.org/api/style-transfer'
 
-def export_image(image):
-   
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    byte_image = buffer.getvalue()
-    return byte_image
+response = requests.post(
+    url,
+    data={
+        'content': content_image_url,
+        'style': style_image_url,
+    },
+    headers={'api-key': api_key}
+)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-network_pkl = "https://api.ngc.nvidia.com/v2/models/nvidia/research/stylegan3/versions/1/files/sg3-r-ffhq-1024x1024.pkl"
-G = load_pretrained_model(network_pkl)
-
-def st_ui():
-    st.title("StyleGAN3 High-Resolution Image Generator")
-    st.sidebar.title("StyleGAN3 Controls")
-
-    seed = st.sidebar.number_input("Seed for Random Latent", min_value=0, max_value=100000, value=42, step=1)
-    truncation_psi = st.sidebar.slider("Truncation Psi", min_value=0.0, max_value=1.0, value=0.7, step=0.05)
-
-    rnd = np.random.RandomState(seed)
-    z = torch.from_numpy(rnd.randn(1, G.z_dim)).to(device)
-
-    if st.sidebar.button("Generate Image"):
-        with st.spinner('Generating image...'):
-            generated_image = generate_image(G, z, truncation_psi)
-            st.image(generated_image, caption="Generated Image", use_column_width=True)
-            st.download_button(label="Download Image", data=export_image(generated_image), file_name="generated_image.png", mime="image/png")
-
-if __name__ == "__main__":
-    st_ui()    
+if response.status_code == 200:
+    result = response.json()
+    output_image_url = result['output_url']
+    print('Output image URL:', output_image_url)
+else:
+    print('Error:', response.text)
