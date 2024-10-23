@@ -1,22 +1,24 @@
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+from setuptools import setup, find_packages
 
-[tool.poetry]
-name = "stylegan3"
-version = "0.1.0"
-description = "StyleGAN3: Official PyTorch Implementation"
-authors = ["NVIDIA <info@nvidia.com>"]
-
-[tool.poetry.dependencies]
-python = ">=3.6"
-torch = ">=1.7"
-numpy = "*"
-scipy = "*"
-pillow = "*"
-
-[tool.poetry.dev-dependencies]
-# Add any development dependencies here
-
-[build]
-includes = ["**/*"]
+setup(
+    name='stylegan3',
+    version='0.1.0',
+    author='NVIDIA',
+    author_email='info@nvidia.com',
+    description='StyleGAN3: Official PyTorch Implementation',
+    packages=find_packages(),  # Automatically find and include packages
+    install_requires=[
+        # List the required packages here
+        'torch>=1.7',  # Example, adjust as necessary
+        'numpy',
+        'scipy',
+        'Pillow',
+        # Add other dependencies based on requirements
+    ],
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent',
+    ],
+    python_requires='>=3.6',  # Specify the required Python version
+)
