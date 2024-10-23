@@ -5,6 +5,10 @@ from io import BytesIO
 from PIL import Image
 import dnnlib
 import legacy  
+import sys
+sys.path.append('./stylegan3')  
+import dnnlib
+import legacy
 
 st.set_page_config(page_title="Advanced StyleGAN3 Generator", layout="wide")
 
