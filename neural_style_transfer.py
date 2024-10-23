@@ -6,14 +6,13 @@ import tensorflow as tf
 import tensorflow_hub as tf_hub
 import matplotlib.pyplot as plt
 
-# Ensure eager execution is enabled
 tf.executing_eagerly()
 
 st.set_page_config(
     page_title="Neural Style Transfer", layout="wide"
 )
 
-def load_image(image_buffer, image_size=(1024, 512)): 
+def load_image(image_buffer, image_size=(1024, 1024)):  
     img = plt.imread(image_buffer).astype(np.float32)[np.newaxis, ...]
     if img.max() > 1.0:
         img = img / 255.0
