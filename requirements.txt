@@ -4,4 +4,7 @@ tensorflow_hub
 numpy
 matplotlib
 pillow
+torch
+dnnlib
+StyleGAN3
 setuptools
