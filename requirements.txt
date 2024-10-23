@@ -5,7 +5,5 @@ numpy
 matplotlib
 pillow
 torch
-dnnlib
-StyleGAN3
-git+https://github.com/NVlabs/stylegan3
+requests
 setuptools
