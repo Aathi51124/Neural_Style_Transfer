@@ -6,129 +6,135 @@ import tensorflow as tf
 import tensorflow_hub as tf_hub
 import cv2
 import tempfile
+import os
 
-st.set_page_config(page_title="Video Neural Style Transfer", layout="wide")
+tf.executing_eagerly()
 
-# Load image function
-def load_image(image_buffer, image_size=(512, 512)):
-    img = Image.open(image_buffer)
-    img = img.convert("RGB")
-    img = img.resize(image_size)
-    img = np.array(img).astype(np.float32)[np.newaxis, ...] / 255.0
+st.set_page_config(page_title="Neural Style Transfer", layout="wide")
+
+def load_image(image_buffer, image_size=(1024, 1024)):
+    img = plt.imread(image_buffer).astype(np.float32)[np.newaxis, ...]
+    if img.max() > 1.0:
+        img = img / 255.0
+    if len(img.shape) == 3:
+        img = tf.stack([img, img, img], axis=-1)
+    img = tf.image.resize(img, image_size, preserve_aspect_ratio=True)
     return img
 
-# Export video function
-def export_video(frames, output_path, fps=30):
-    height, width, _ = frames[0].shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+def export_image(tf_img):
+    pil_image = Image.fromarray(np.squeeze(tf_img * 255).astype(np.uint8))
+    buffer = BytesIO()
+    pil_image.save(buffer, format="PNG", quality=95)
+    byte_image = buffer.getvalue()
+    return byte_image
 
-    for frame in frames:
-        out.write(frame)
+def apply_style_transfer_to_video(content_video_path, style_image, model, output_path):
+    cap = cv2.VideoCapture(content_video_path)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
 
+    # Create a temporary file for the output video
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Convert the frame to the required format for style transfer
+        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(img)
+        img = np.array(img).astype(np.float32)[np.newaxis, ...] / 255.0
+        img = tf.image.resize(img, (frame_height, frame_width))
+
+        # Apply style transfer
+        result = model(tf.constant(img), tf.constant(style_image))
+        stylized_frame = result[0].numpy()
+
+        # Convert the stylized frame back to the original format
+        stylized_frame = np.squeeze(stylized_frame * 255).astype(np.uint8)
+        stylized_frame = cv2.cvtColor(stylized_frame, cv2.COLOR_RGB2BGR)
+
+        # Write the frame to the output video
+        out.write(stylized_frame)
+
+    cap.release()
     out.release()
 
-# Style transfer function
-def apply_style_transfer(content_frame, style_image, model):
-    content_tensor = tf.convert_to_tensor(content_frame)
-    content_tensor = tf.image.resize(content_tensor, (512, 512))
-    content_tensor = content_tensor[tf.newaxis, ...]
-
-    style_tensor = tf.convert_to_tensor(style_image)
-    style_tensor = tf.image.resize(style_tensor, (512, 512))
-    style_tensor = style_tensor[tf.newaxis, ...]
-
-    outputs = model(tf.constant(content_tensor), tf.constant(style_tensor))
-    stylized_frame = outputs[0]
-    stylized_frame = tf.image.resize(stylized_frame, (content_frame.shape[0], content_frame.shape[1]))
-    return np.array(stylized_frame[0] * 255, dtype=np.uint8)
-
-# Streamlit UI
 def st_ui():
-    st.title("Video Neural Style Transfer")
-    st.sidebar.title("Upload and Configure")
-    
-    content_video = st.sidebar.file_uploader("Upload Content Video", type=["mp4", "avi", "mov"])
-    style_choice = st.sidebar.radio("Choose Style Source", ("Style Image", "Style Video"))
-    style_image = None
-    style_video = None
+    if "upload_history" not in st.session_state:
+        st.session_state.upload_history = []
+    if "result_history" not in st.session_state:
+        st.session_state.result_history = []
 
-    if style_choice == "Style Image":
-        style_image = st.sidebar.file_uploader("Upload Style Image", type=["jpeg", "png", "jpg"])
-    elif style_choice == "Style Video":
-        style_video = st.sidebar.file_uploader("Upload Style Video", type=["mp4", "avi", "mov"])
+    st.sidebar.title("Style Transfer")
+    st.sidebar.markdown("Your personal neural style transfer")
 
-    st.sidebar.write("Neural Style Transfer Settings")
-    fps = st.sidebar.slider("Output FPS", 1, 60, 30)
+    image_upload1 = st.sidebar.file_uploader("Load your content image", type=["jpeg", "png", "jpg"], key="content_image", help="Upload the image you want to style")
+    image_upload2 = st.sidebar.file_uploader("Load your style image", type=["jpeg", "png", "jpg"], key="style_image", help="Upload the style image")
+    video_upload = st.sidebar.file_uploader("Load your content video", type=["mp4", "mov"], key="content_video", help="Upload the video you want to style")
 
-    if st.sidebar.button("Start Style Transfer"):
-        if content_video:
-            with st.spinner("Processing Video..."):
-                # Temporary file handling
-                temp_content_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                temp_content_file.write(content_video.read())
-                temp_content_file.close()
-                
-                # Load the content video using OpenCV
-                cap_content = cv2.VideoCapture(temp_content_file.name)
-                frame_count = int(cap_content.get(cv2.CAP_PROP_FRAME_COUNT))
-                frame_width = int(cap_content.get(cv2.CAP_PROP_FRAME_WIDTH))
-                frame_height = int(cap_content.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    col1, col2, col3 = st.columns(3)
 
-                # Load the style transfer model
-                model = tf_hub.load('https://tfhub.dev/google/magenta/arbitrary-image-stylization-v1-256/2')
+    with st.spinner("Loading content image..."):
+        if image_upload1 is not None:
+            col1.header("Content Image")
+            col1.image(image_upload1, use_column_width=True)
+            original_image = load_image(image_upload1)
+            st.session_state.upload_history.append({"type": "content", "image": image_upload1.getvalue()})
+        else:
+            original_image = load_image("1.jpg")
 
-                # Load style image or video frames
-                if style_image:
-                    style_img = load_image(style_image)
-                elif style_video:
-                    temp_style_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                    temp_style_file.write(style_video.read())
-                    temp_style_file.close()
-                    cap_style = cv2.VideoCapture(temp_style_file.name)
+    with st.spinner("Loading style image..."):
+        if image_upload2 is not None:
+            col2.header("Style Image")
+            col2.image(image_upload2, use_column_width=True)
+            style_image = load_image(image_upload2)
+            st.session_state.upload_history.append({"type": "style", "image": image_upload2.getvalue()})
+        else:
+            style_image = load_image("2.jpg")
 
-                # Process the video frame by frame
-                frames = []
-                frame_idx = 0
+    if st.sidebar.button(label="Start Styling for Image"):
+        if image_upload1 and image_upload2:
+            with st.spinner('Generating stylized image...'):
+                stylize_model = tf_hub.load('https://tfhub.dev/google/magenta/arbitrary-image-stylization-v1-256/2')
+                results = stylize_model(tf.constant(original_image), tf.constant(style_image))
+                stylized_photo = results[0]
+                col3.header("Final Image")
+                col3.image(np.array(stylized_photo))
+                st.session_state.result_history.append(export_image(stylized_photo))
+                st.download_button(label="Download Final Image", data=export_image(stylized_photo), file_name="stylized_image.png", mime="image/png")
+        else:
+            st.sidebar.warning("Please upload both content and style images.")
 
-                while cap_content.isOpened():
-                    ret, content_frame = cap_content.read()
-                    if not ret:
-                        break
+    if st.sidebar.button(label="Start Styling for Video"):
+        if video_upload and image_upload2:
+            with st.spinner('Processing video...'):
+                temp_dir = tempfile.mkdtemp()
+                content_video_path = os.path.join(temp_dir, video_upload.name)
+                with open(content_video_path, "wb") as f:
+                    f.write(video_upload.read())
 
-                    content_frame_rgb = cv2.cvtColor(content_frame, cv2.COLOR_BGR2RGB)
+                output_video_path = os.path.join(temp_dir, "stylized_video.mp4")
+                stylize_model = tf_hub.load('https://tfhub.dev/google/magenta/arbitrary-image-stylization-v1-256/2')
 
-                    if style_image:
-                        # Apply style transfer with the static style image
-                        stylized_frame = apply_style_transfer(content_frame_rgb, style_img, model)
-                    elif style_video:
-                        # Match frame from style video
-                        ret_style, style_frame = cap_style.read()
-                        if not ret_style:
-                            cap_style.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                            ret_style, style_frame = cap_style.read()
-                        style_frame_rgb = cv2.cvtColor(style_frame, cv2.COLOR_BGR2RGB)
-                        style_img = style_frame_rgb.astype(np.float32) / 255.0
-                        stylized_frame = apply_style_transfer(content_frame_rgb, style_img, model)
+                apply_style_transfer_to_video(content_video_path, style_image, stylize_model, output_video_path)
 
-                    # Convert back to BGR for saving
-                    stylized_frame_bgr = cv2.cvtColor(stylized_frame, cv2.COLOR_RGB2BGR)
-                    frames.append(stylized_frame_bgr)
+                with open(output_video_path, "rb") as f:
+                    st.download_button(label="Download Final Video", data=f, file_name="stylized_video.mp4", mime="video/mp4")
+        else:
+            st.sidebar.warning("Please upload a video and a style image.")
 
-                    frame_idx += 1
-                    st.progress(frame_idx / frame_count)
+    st.sidebar.subheader("Upload History")
+    for idx, upload in enumerate(st.session_state.upload_history):
+        st.sidebar.markdown(f"Upload {idx+1} ({upload['type']})")
+        st.sidebar.image(BytesIO(upload['image']), width=100)
 
-                cap_content.release()
-                if style_video:
-                    cap_style.release()
-
-                # Export the processed frames to a video
-                output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-                export_video(frames, output_video_path, fps)
-
-                # Display the final video
-                st.video(output_video_path)
-                st.success("Style Transfer Completed!")
+    st.sidebar.subheader("Generated Results")
+    for idx, result in enumerate(st.session_state.result_history):
+        st.sidebar.markdown(f"Result {idx+1}")
+        st.sidebar.image(BytesIO(result), width=100)
 
 if __name__ == "__main__":
     st_ui()
