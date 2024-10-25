@@ -12,12 +12,24 @@ tf.executing_eagerly()
 
 st.set_page_config(page_title="Neural Style Transfer", layout="wide")
 
+import io
+
 def load_image(image_buffer, image_size=(1024, 1024)):
-    img = plt.imread(image_buffer).astype(np.float32)[np.newaxis, ...]
+    if isinstance(image_buffer, str):
+        # This handles the default image case; you can replace '1.jpg' with any image you want.
+        img = Image.open(image_buffer)
+    else:
+        # Handle the uploaded file
+        img = Image.open(io.BytesIO(image_buffer.read()))
+
+    img = np.array(img).astype(np.float32)[np.newaxis, ...]
+    
     if img.max() > 1.0:
         img = img / 255.0
+    
     if len(img.shape) == 3:
         img = tf.stack([img, img, img], axis=-1)
+
     img = tf.image.resize(img, image_size, preserve_aspect_ratio=True)
     return img
 
