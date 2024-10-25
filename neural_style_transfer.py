@@ -90,5 +90,5 @@ def st_ui():
         st.sidebar.markdown(f"Result {idx+1}")
         st.sidebar.image(BytesIO(result), width=100)
 
-if _name_ == "_main_":  
+if __name__ == "__main__":  
     st_ui()
