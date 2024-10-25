@@ -6,4 +6,5 @@ matplotlib
 pillow
 torch
 requests
+opencv-python
 setuptools
